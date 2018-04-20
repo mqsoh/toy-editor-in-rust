@@ -1,27 +1,55 @@
-extern crate termion;
+extern crate termios;
 
-use std::{thread, time};
 use std::fs::File;
 use std::io::{
-    self,
     BufRead,
     BufReader,
     Read,
+    Stdin,
     stdin,
-    stdout,
-    Stdout,
-    Write,
 };
-use std::process::exit;
+use std::os::unix::io::{AsRawFd, RawFd};
 
-use termion::event::Key;
-use termion::input::TermRead;
-use termion::raw::{IntoRawMode, RawTerminal};
-use termion::screen::{AlternateScreen, ToAlternateScreen, ToMainScreen};
+use termios::{cfmakeraw, Termios, TCSANOW, tcsetattr};
+
+enum Command {
+    NoOp,
+    Quit,
+}
+
+struct EditorIO {
+    stdin: Stdin,
+    fd: RawFd,
+    original_termios: Termios,
+}
+
+impl EditorIO {
+    fn new() -> EditorIO {
+        let stdin = stdin();
+
+        let stdin_fd = stdin.as_raw_fd();
+
+        let ot = Termios::from_fd(stdin_fd).unwrap();
+        let mut t = ot.clone();
+
+        cfmakeraw(&mut t);
+        tcsetattr(stdin_fd, TCSANOW, &mut t).unwrap();
+
+        EditorIO{
+            stdin: stdin,
+            fd: stdin_fd,
+            original_termios: ot,
+        }
+    }
+
+    fn restore(&mut self) {
+        tcsetattr(self.fd, TCSANOW, & self.original_termios).unwrap();
+    }
+}
 
 struct Editor {
     lines: Vec<String>,
-    screen: AlternateScreen<RawTerminal<Stdout>>,
+    io: EditorIO,
 }
 
 impl Editor {
@@ -33,52 +61,38 @@ impl Editor {
                 },
                 _ => panic!("failed to open file"),
             },
-            screen: AlternateScreen::from(stdout().into_raw_mode().unwrap()),
+            io: EditorIO::new(),
         }
     }
 
     fn run(&mut self) {
-        write!(self.screen, "{}", ToAlternateScreen).unwrap();
+        println!("[31;49mI have a butt![39;49m");
 
         loop {
             self.render();
             match self.handle_input() {
-                true => break,
+                Command::Quit => break,
                 _ => {},
             }
         }
 
-        write!(self.screen, "{}", ToMainScreen).unwrap();
+        self.io.restore();
     }
 
-    fn render(&self) {
+    fn render(&mut self) {
     }
 
-    fn handle_input(&mut self) -> bool {
-        //let line = {
-        //    let mut b = String::new();
-        //    match io::stdin().read_line(&mut b) {
-        //        Ok(_) => b,
-        //        _ => panic!("TODO failed getting user input. Is that scary?"),
-        //    }
-        //};
+    fn handle_input(&mut self) -> Command {
+        let mut buf: [u8; 1] = [0; 1];
 
-        //match line.as_ref() {
-        //    "q\n" => exit(0),
-        //    any => println!("{:?} isn't a command. Hit q to quit.", any),
-        //}
-        match stdin().keys().next().unwrap() {
-            Ok(Key::Ctrl('q')) => {
-                write!(self.screen, "Quitting...\n").unwrap();
-                self.screen.flush().unwrap();
-                true
+        self.io.stdin.read_exact(&mut buf).unwrap();
+
+        match buf[0] {
+            17 => Command::Quit,
+            any => {
+                println!("I don't know what {} is. Ctrl-q to quit.", any);
+                Command::NoOp
             },
-            Ok(any_key) => {
-                write!(self.screen, "I don't know what to do with {:?}\n", any_key).unwrap();
-                self.screen.flush().unwrap();
-                false
-            },
-            Err(e) => panic!("{:?}", e),
         }
     }
 }
