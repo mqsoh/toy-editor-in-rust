@@ -1,0 +1,6 @@
+[package]
+name = "med"
+version = "0.1.0"
+authors = ["mason"]
+
+[dependencies]
