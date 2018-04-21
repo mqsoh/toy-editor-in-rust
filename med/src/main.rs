@@ -7,6 +7,8 @@ use std::io::{
     Read,
     Stdin,
     stdin,
+    stdout,
+    Write,
 };
 use std::os::unix::io::{AsRawFd, RawFd};
 
@@ -48,26 +50,28 @@ impl EditorIO {
 }
 
 struct Editor {
-    lines: Vec<String>,
     io: EditorIO,
+    buffer: Buffer,
+    cursor: Cursor,
 }
 
 impl Editor {
     fn new() -> Editor {
-        Editor{
-            lines: match File::open("foo.txt") {
-                Ok(f) => {
-                    BufReader::new(f).lines().map(|line| line.unwrap()).collect()
-                },
-                _ => panic!("failed to open file"),
+        let lines = match File::open("foo.txt") {
+            Ok(f) => {
+                BufReader::new(f).lines().map(|line| line.unwrap()).collect()
             },
+            _ => panic!("failed to open file"),
+        };
+
+        Editor{
             io: EditorIO::new(),
+            buffer: Buffer::new(lines),
+            cursor: Cursor::new(),
         }
     }
 
     fn run(&mut self) {
-        println!("[31;49mI have a butt![39;49m");
-
         loop {
             self.render();
             match self.handle_input() {
@@ -80,6 +84,13 @@ impl Editor {
     }
 
     fn render(&mut self) {
+        // clear screen
+        ANSI::clear_screen();
+        // move cursor
+        ANSI::move_cursor(0, 0);
+        self.buffer.render();
+        ANSI::move_cursor(0, 0);
+        ANSI::flush();
     }
 
     fn handle_input(&mut self) -> Command {
@@ -98,9 +109,51 @@ impl Editor {
 }
 
 struct Buffer {
+    lines: Vec<String>,
+}
+
+impl Buffer {
+    fn new(lines: Vec<String>) -> Buffer {
+        Buffer{
+            lines: lines,
+        }
+    }
+
+    fn render(&self) {
+        for line in self.lines.iter() {
+            println!("{}\r", line);
+        }
+    }
 }
 
 struct Cursor {
+    pub row: u8,
+    pub col: u8,
+}
+
+impl Cursor {
+    fn new() -> Cursor {
+        Cursor{
+            row: 1,
+            col: 1,
+        }
+    }
+}
+
+struct ANSI {}
+
+impl ANSI {
+    fn clear_screen() {
+        stdout().write(b"[2J");
+    }
+
+    fn move_cursor(row: u8, col: u8) {
+        stdout().write_fmt(format_args!("[{};{}H", row + 1, col + 1));
+    }
+
+    fn flush() {
+        stdout().flush().unwrap();
+    }
 }
 
 fn main() {
