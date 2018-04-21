@@ -1,5 +1,6 @@
 extern crate termios;
 
+use std::env;
 use std::fs::File;
 use std::io::{
     BufRead,
@@ -89,7 +90,7 @@ impl Editor {
         // move cursor
         ANSI::move_cursor(0, 0);
         self.buffer.render();
-        ANSI::move_cursor(0, 0);
+        ANSI::move_cursor(self.cursor.row, self.cursor.col);
         ANSI::flush();
     }
 
@@ -99,7 +100,28 @@ impl Editor {
         self.io.stdin.read_exact(&mut buf).unwrap();
 
         match buf[0] {
+            // Ctrl-q
             17 => Command::Quit,
+            // up: Ctrl-k
+            11 => {
+                self.cursor = self.cursor.up(&self.buffer);
+                Command::NoOp
+            },
+            // down: Ctrl-j
+            10 => {
+                self.cursor = self.cursor.down(&self.buffer);
+                Command::NoOp
+            },
+            // left: Ctrl-h
+            8 => {
+                self.cursor = self.cursor.left(&self.buffer);
+                Command::NoOp
+            },
+            // right: Ctrl-l
+            12 => {
+                self.cursor = self.cursor.right(&self.buffer);
+                Command::NoOp
+            },
             any => {
                 println!("I don't know what {} is. Ctrl-q to quit.", any);
                 Command::NoOp
@@ -124,6 +146,18 @@ impl Buffer {
             println!("{}\r", line);
         }
     }
+
+    fn num_lines(&self) -> u8 {
+        self.lines.len() as u8
+    }
+
+    fn num_chars(&self, row: u8) -> u8 {
+        if row as usize >= self.lines.len() {
+            0
+        } else {
+            self.lines[row as usize].len() as u8
+        }
+    }
 }
 
 struct Cursor {
@@ -136,6 +170,59 @@ impl Cursor {
         Cursor{
             row: 1,
             col: 1,
+        }
+    }
+
+    fn up(&self, buffer: &Buffer) -> Cursor {
+        Cursor {
+            row: match self.row.checked_sub(1) {
+                Some(v) => v,
+                None => 0,
+            },
+            ..*self
+        }
+    }
+
+    fn down(&self, buffer: &Buffer) -> Cursor {
+        Cursor {
+            row: self.row+1,
+            ..*self
+        }.clamp(buffer)
+    }
+
+    fn left(&self, buffer: &Buffer) -> Cursor {
+        Cursor {
+            col: match self.col.checked_sub(1) {
+                Some(v) => v,
+                None => 0,
+            },
+            ..*self
+        }.clamp(buffer)
+    }
+
+    fn right(&self, buffer: &Buffer) -> Cursor {
+        Cursor {
+            col: self.col + 1,
+            ..*self
+        }.clamp(buffer)
+    }
+
+    fn clamp(&self, buffer: &Buffer) -> Cursor {
+        // I don't need to check for < 0 because of the use of `checked_sub` in
+        // the directional methods.
+        let row: u8 = if self.row >= buffer.num_lines() {
+            buffer.num_lines() - 1
+        } else {
+            self.row
+        };
+        let col: u8 = if self.col > buffer.num_chars(row) {
+            buffer.num_chars(self.row)
+        } else {
+            self.col
+        };
+        Cursor {
+            row: row,
+            col: col,
         }
     }
 }
@@ -151,12 +238,36 @@ impl ANSI {
         stdout().write_fmt(format_args!("[{};{}H", row + 1, col + 1));
     }
 
+    fn move_cursor_col(col: u8) {
+        stdout().write_fmt(format_args!("[{}G", col + 1));
+    }
+
     fn flush() {
         stdout().flush().unwrap();
     }
 }
 
 fn main() {
-    println!("Hello, world!");
-    Editor::new().run();
+    let args: Vec<String> = env::args().collect();
+    if args.len() == 2 && args[1] == "key-inspector" {
+        key_inspector();
+    } else {
+        Editor::new().run();
+    }
+}
+
+fn key_inspector() {
+    let mut io = EditorIO::new();
+    loop {
+        let mut buf: [u8; 1] = [0; 1];
+        io.stdin.read_exact(&mut buf).unwrap();
+        println!("Key read as: {:?}", buf);
+        ANSI::move_cursor_col(0);
+        ANSI::flush();
+        if buf[0] == 17 {
+            println!("Quitting... (You hit Ctrl-q.)");
+            break
+        }
+    }
+    io.restore();
 }
