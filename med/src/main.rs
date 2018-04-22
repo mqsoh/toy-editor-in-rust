@@ -11,6 +11,8 @@ use std::io::{
     stdout,
     Write,
 };
+use std::mem::replace;
+use std::mem::swap;
 use std::os::unix::io::{AsRawFd, RawFd};
 
 use termios::{cfmakeraw, Termios, TCSANOW, tcsetattr};
@@ -50,10 +52,16 @@ impl EditorIO {
     }
 }
 
+struct EditorState {
+    buffer: Buffer,
+    cursor: Cursor,
+}
+
 struct Editor {
     io: EditorIO,
     buffer: Buffer,
     cursor: Cursor,
+    history: Vec<EditorState>,
 }
 
 impl Editor {
@@ -69,6 +77,7 @@ impl Editor {
             io: EditorIO::new(),
             buffer: Buffer::new(lines),
             cursor: Cursor::new(),
+            history: Vec::new(),
         }
     }
 
@@ -122,25 +131,58 @@ impl Editor {
                 self.cursor = self.cursor.right(&self.buffer);
                 Command::NoOp
             },
+            // undo: Ctrl-u
+            21 => {
+                self.restore_state();
+                Command::NoOp
+            },
             // carriage return
             13 => {
-                self.buffer = self.buffer.split_line(self.cursor.row, self.cursor.col);
-                self.cursor = self.cursor.down(&self.buffer).move_to_col(0);
+                let buffer = self.buffer.split_line(self.cursor.row, self.cursor.col);
+                let cursor = self.cursor.down(&buffer).move_to_col(0);
+
+                let old_state = EditorState {
+                    buffer: replace(&mut self.buffer, buffer),
+                    cursor: replace(&mut self.cursor, cursor),
+                };
+                self.history.push(old_state);
                 Command::NoOp
             },
             // backspace
             127 => {
                 if self.cursor.col > 0 {
-                    self.buffer = self.buffer.delete(self.cursor.row, self.cursor.col - 1);
-                    self.cursor = self.cursor.left(&self.buffer);
+                    let buffer = self.buffer.delete(self.cursor.row, self.cursor.col - 1);
+                    let cursor = self.cursor.left(&buffer);
+
+                    let old_state = EditorState {
+                        buffer: replace(&mut self.buffer, buffer),
+                        cursor: replace(&mut self.cursor, cursor),
+                    };
+                    self.history.push(old_state);
                 }
                 Command::NoOp
             },
             any => {
-                self.buffer = self.buffer.insert(any, self.cursor.row, self.cursor.col);
-                self.cursor = self.cursor.right(&self.buffer);
+                let buffer = self.buffer.insert(any, self.cursor.row, self.cursor.col);
+                let cursor = self.cursor.right(&buffer);
+
+                let old_state = EditorState {
+                    buffer: replace(&mut self.buffer, buffer),
+                    cursor: replace(&mut self.cursor, cursor),
+                };
+                self.history.push(old_state);
                 Command::NoOp
             },
+        }
+    }
+
+    fn restore_state(&mut self) {
+        match self.history.pop() {
+            Some(mut state) => {
+                swap(&mut self.buffer, &mut state.buffer);
+                swap(&mut self.cursor, &mut state.cursor);
+            },
+            _ => {},
         }
     }
 }
@@ -223,8 +265,8 @@ struct Cursor {
 impl Cursor {
     fn new() -> Cursor {
         Cursor{
-            row: 1,
-            col: 1,
+            row: 0,
+            col: 0,
         }
     }
 
