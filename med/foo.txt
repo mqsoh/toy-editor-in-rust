@@ -1,2 +1,24 @@
-foo
-bar
+This is a toy text editor that I wrote in Rust, following Gary Bernhardt's Text
+Editor From Scratch screencast on Destroy All Software.
+
+https://www.destroyallsoftware.com/screencasts/catalog/text-editor-from-scratch
+
+Ctrl-q quits.
+
+To navigate:
+
+    Up: Ctrl-k
+    Down: Ctrl-j
+    Left: Ctrl-h
+    Right: Ctrl-l
+
+You can also undo with Ctrl-u.
+
+You can type any ASCII character and backspace works, but nothing else, really.
+The screencast has limited (but amazing!) goals. Also, the lack of unicode is
+because, in Ruby, he just does a sort of `getch` that supports Unicode but I
+couldn't figure out how to do that properly in Rust.
+
+Anyway... Don't try to save the file or edit a different file.
+
+It's impossible! hehe
