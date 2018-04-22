@@ -122,8 +122,23 @@ impl Editor {
                 self.cursor = self.cursor.right(&self.buffer);
                 Command::NoOp
             },
+            // carriage return
+            13 => {
+                self.buffer = self.buffer.split_line(self.cursor.row, self.cursor.col);
+                self.cursor = self.cursor.down(&self.buffer).move_to_col(0);
+                Command::NoOp
+            },
+            // backspace
+            127 => {
+                if self.cursor.col > 0 {
+                    self.buffer = self.buffer.delete(self.cursor.row, self.cursor.col - 1);
+                    self.cursor = self.cursor.left(&self.buffer);
+                }
+                Command::NoOp
+            },
             any => {
-                println!("I don't know what {} is. Ctrl-q to quit.", any);
+                self.buffer = self.buffer.insert(any, self.cursor.row, self.cursor.col);
+                self.cursor = self.cursor.right(&self.buffer);
                 Command::NoOp
             },
         }
@@ -156,6 +171,46 @@ impl Buffer {
             0
         } else {
             self.lines[row as usize].len() as u8
+        }
+    }
+
+    fn _clone_lines(&self) -> Vec<String> {
+        let mut lines: Vec<String> = Vec::new();
+        for line in self.lines.iter() {
+            lines.push(line.clone())
+        };
+        lines
+    }
+
+    fn insert(&self, character: u8, row: u8, col: u8) -> Buffer {
+        let mut lines = self._clone_lines();
+        lines[row as usize].insert(col as usize, char::from(character));
+        Buffer {
+            lines: lines
+        }
+    }
+
+    fn delete(&self, row: u8, col: u8) -> Buffer {
+        let mut lines = self._clone_lines();
+        lines[row as usize].remove(col as usize);
+        Buffer {
+            lines: lines,
+        }
+    }
+
+    fn split_line(&self, row: u8, col: u8) -> Buffer {
+        let mut lines: Vec<String> = Vec::new();
+        for (i, line) in self.lines.iter().enumerate() {
+            if i == row as usize {
+                let (a, b) = line.split_at(col as usize);
+                lines.push(String::from(a));
+                lines.push(String::from(b));
+            } else {
+                lines.push(line.clone());
+            }
+        }
+        Buffer {
+            lines: lines,
         }
     }
 }
@@ -223,6 +278,13 @@ impl Cursor {
         Cursor {
             row: row,
             col: col,
+        }
+    }
+
+    fn move_to_col(&self, col: u8) -> Cursor {
+        Cursor {
+            col: col,
+            ..*self
         }
     }
 }
